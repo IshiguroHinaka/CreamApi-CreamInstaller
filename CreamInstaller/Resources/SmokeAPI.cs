@@ -80,6 +80,10 @@ internal static class SmokeAPI
     SortedList<string, (DlcType type, string name, string icon)> overrideDlc, SortedList<string, (DlcType type, string name, string icon)> injectDlc,
     InstallForm installForm = null)
 {
+    // 只生成 2157560 的配置
+    if (appId != "2157560")
+        return;
+
     writer.WriteLine("{");
     writer.WriteLine("  \"$version\": 2,");
     writer.WriteLine("  \"logging\": false,");
@@ -87,7 +91,7 @@ internal static class SmokeAPI
     writer.WriteLine("  \"default_app_status\": \"unlocked\",");
     writer.WriteLine("  \"override_app_status\": {},");
 
-    // Apply overrides to both 2157560 and 2667960
+    // 写入 overrideDlc 配置
     if (overrideDlc.Count > 0)
     {
         writer.WriteLine("  \"override_dlc_status\": {");
@@ -107,50 +111,39 @@ internal static class SmokeAPI
     writer.WriteLine("  \"auto_inject_inventory\": true,");
     writer.WriteLine("  \"extra_inventory_items\": [],");
 
+    // 处理 DLC 配置
     if (injectDlc.Count > 0 || extraApps.Count > 0)
     {
         writer.WriteLine("  \"extra_dlcs\": {");
+
+        // 为 2667960 添加 2157560 的 DLC 配置
+        writer.WriteLine($"    \"2667960\": {{");
+        writer.WriteLine("      \"dlcs\": {");
+        KeyValuePair<string, (DlcType type, string name, string icon)> lastInjectDlc = injectDlc.Last();
+        foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
+        {
+            string dlcId = pair.Key;
+            (_, string dlcName, _) = pair.Value;
+            writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
+            installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
+        }
+        writer.WriteLine("      }");
+        writer.WriteLine("    },");
+
+        // 写入 2157560 的 DLC 配置
+        writer.WriteLine($"    \"2157560\": {{");
+        writer.WriteLine("      \"dlcs\": {");
+        lastInjectDlc = injectDlc.Last();
+        foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
+        {
+            string dlcId = pair.Key;
+            (_, string dlcName, _) = pair.Value;
+            writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
+            installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
+        }
+        writer.WriteLine("      }");
+        writer.WriteLine("    }");
         
-        // Check for appid 2157560 or 2667960
-        string modifiedAppId = (appId == "2157560" || appId == "2667960") ? "2157560" : appId;
-
-        if (injectDlc.Count > 0)
-        {
-            writer.WriteLine($"    \"{modifiedAppId}\": {{");
-            writer.WriteLine("      \"dlcs\": {");
-            KeyValuePair<string, (DlcType type, string name, string icon)> lastInjectDlc = injectDlc.Last();
-            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
-            {
-                string dlcId = pair.Key;
-                (_, string dlcName, _) = pair.Value;
-                writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
-                installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-            }
-            writer.WriteLine("      }");
-            writer.WriteLine(extraApps.Count > 0 ? "    }," : "    }");
-        }
-
-        if (extraApps.Count > 0)
-        {
-            KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> lastExtraApp = extraApps.Last();
-            foreach (KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> pair in extraApps)
-            {
-                string extraAppId = pair.Key;
-                (string _ /*extraAppName*/, SortedList<string, (DlcType type, string name, string icon)> extraInjectDlc) = pair.Value;
-                writer.WriteLine($"    \"{extraAppId}\": {{");
-                writer.WriteLine("      \"dlcs\": {");
-                KeyValuePair<string, (DlcType type, string name, string icon)> lastExtraAppDlc = extraInjectDlc.Last();
-                foreach (KeyValuePair<string, (DlcType type, string name, string icon)> extraPair in extraInjectDlc)
-                {
-                    string dlcId = extraPair.Key;
-                    (_, string dlcName, _) = extraPair.Value;
-                    writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(extraPair.Equals(lastExtraAppDlc) ? "" : ",")}");
-                    installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-                }
-                writer.WriteLine("      }");
-                writer.WriteLine(pair.Equals(lastExtraApp) ? "    }" : "    },");
-            }
-        }
         writer.WriteLine("  },");
     }
     else
@@ -159,6 +152,8 @@ internal static class SmokeAPI
     writer.WriteLine("  \"store_config\": null");
     writer.WriteLine("}");
 }
+
+    
     internal static async Task Uninstall(string directory, InstallForm installForm = null, bool deleteOthers = true)
         => await Task.Run(() =>
         {
