@@ -76,81 +76,89 @@ internal static class SmokeAPI
     }
 
     private static void WriteConfig(StreamWriter writer, string appId,
-        SortedList<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> extraApps,
-        SortedList<string, (DlcType type, string name, string icon)> overrideDlc, SortedList<string, (DlcType type, string name, string icon)> injectDlc,
-        InstallForm installForm = null)
+    SortedList<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> extraApps,
+    SortedList<string, (DlcType type, string name, string icon)> overrideDlc, SortedList<string, (DlcType type, string name, string icon)> injectDlc,
+    InstallForm installForm = null)
+{
+    writer.WriteLine("{");
+    writer.WriteLine("  \"$version\": 2,");
+    writer.WriteLine("  \"logging\": false,");
+    writer.WriteLine("  \"unlock_family_sharing\": true,");
+    writer.WriteLine("  \"default_app_status\": \"unlocked\",");
+    writer.WriteLine("  \"override_app_status\": {},");
+
+    // Apply overrides to both 2157560 and 2667960
+    if (overrideDlc.Count > 0)
     {
-        writer.WriteLine("{");
-        writer.WriteLine("  \"$version\": 2,");
-        writer.WriteLine("  \"logging\": false,");
-        writer.WriteLine("  \"unlock_family_sharing\": true,");
-        writer.WriteLine("  \"default_app_status\": \"unlocked\",");
-        writer.WriteLine("  \"override_app_status\": {},");
-        if (overrideDlc.Count > 0)
+        writer.WriteLine("  \"override_dlc_status\": {");
+        KeyValuePair<string, (DlcType type, string name, string icon)> lastOverrideDlc = overrideDlc.Last();
+        foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in overrideDlc)
         {
-            writer.WriteLine("  \"override_dlc_status\": {");
-            KeyValuePair<string, (DlcType type, string name, string icon)> lastOverrideDlc = overrideDlc.Last();
-            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in overrideDlc)
+            string dlcId = pair.Key;
+            (_, string dlcName, _) = pair.Value;
+            writer.WriteLine($"    \"{dlcId}\": \"locked\"{(pair.Equals(lastOverrideDlc) ? "" : ",")}");
+            installForm?.UpdateUser($"Added locked DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
+        }
+        writer.WriteLine("  },");
+    }
+    else
+        writer.WriteLine("  \"override_dlc_status\": {},");
+
+    writer.WriteLine("  \"auto_inject_inventory\": true,");
+    writer.WriteLine("  \"extra_inventory_items\": [],");
+
+    if (injectDlc.Count > 0 || extraApps.Count > 0)
+    {
+        writer.WriteLine("  \"extra_dlcs\": {");
+        
+        // Check for appid 2157560 or 2667960
+        string modifiedAppId = (appId == "2157560" || appId == "2667960") ? "2157560" : appId;
+
+        if (injectDlc.Count > 0)
+        {
+            writer.WriteLine($"    \"{modifiedAppId}\": {{");
+            writer.WriteLine("      \"dlcs\": {");
+            KeyValuePair<string, (DlcType type, string name, string icon)> lastInjectDlc = injectDlc.Last();
+            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
             {
                 string dlcId = pair.Key;
                 (_, string dlcName, _) = pair.Value;
-                writer.WriteLine($"    \"{dlcId}\": \"locked\"{(pair.Equals(lastOverrideDlc) ? "" : ",")}");
-                installForm?.UpdateUser($"Added locked DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
+                writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
+                installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
             }
-            writer.WriteLine("  },");
+            writer.WriteLine("      }");
+            writer.WriteLine(extraApps.Count > 0 ? "    }," : "    }");
         }
-        else
-            writer.WriteLine("  \"override_dlc_status\": {},");
-        writer.WriteLine("  \"auto_inject_inventory\": true,");
-        writer.WriteLine("  \"extra_inventory_items\": [],");
-        if (injectDlc.Count > 0 || extraApps.Count > 0)
+
+        if (extraApps.Count > 0)
         {
-            writer.WriteLine("  \"extra_dlcs\": {");
-            if (injectDlc.Count > 0)
+            KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> lastExtraApp = extraApps.Last();
+            foreach (KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> pair in extraApps)
             {
-                writer.WriteLine("    \"" + appId + "\": {");
+                string extraAppId = pair.Key;
+                (string _ /*extraAppName*/, SortedList<string, (DlcType type, string name, string icon)> extraInjectDlc) = pair.Value;
+                writer.WriteLine($"    \"{extraAppId}\": {{");
                 writer.WriteLine("      \"dlcs\": {");
-                KeyValuePair<string, (DlcType type, string name, string icon)> lastInjectDlc = injectDlc.Last();
-                foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
+                KeyValuePair<string, (DlcType type, string name, string icon)> lastExtraAppDlc = extraInjectDlc.Last();
+                foreach (KeyValuePair<string, (DlcType type, string name, string icon)> extraPair in extraInjectDlc)
                 {
-                    string dlcId = pair.Key;
-                    (_, string dlcName, _) = pair.Value;
-                    writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
+                    string dlcId = extraPair.Key;
+                    (_, string dlcName, _) = extraPair.Value;
+                    writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(extraPair.Equals(lastExtraAppDlc) ? "" : ",")}");
                     installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
                 }
                 writer.WriteLine("      }");
-                writer.WriteLine(extraApps.Count > 0 ? "    }," : "    }");
+                writer.WriteLine(pair.Equals(lastExtraApp) ? "    }" : "    },");
             }
-            if (extraApps.Count > 0)
-            {
-                KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> lastExtraApp = extraApps.Last();
-                foreach (KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> pair in extraApps)
-                {
-                    string extraAppId = pair.Key;
-                    (string _ /*extraAppName*/, SortedList<string, (DlcType type, string name, string icon)> extraInjectDlc) = pair.Value;
-                    writer.WriteLine("    \"" + extraAppId + "\": {");
-                    writer.WriteLine("      \"dlcs\": {");
-                    //installForm?.UpdateUser($"Added extra app to SmokeAPI.config.json with appid {extraAppId} ({extraAppName})", LogTextBox.Action, false);
-                    KeyValuePair<string, (DlcType type, string name, string icon)> lastExtraAppDlc = extraInjectDlc.Last();
-                    foreach (KeyValuePair<string, (DlcType type, string name, string icon)> extraPair in extraInjectDlc)
-                    {
-                        string dlcId = extraPair.Key;
-                        (_, string dlcName, _) = extraPair.Value;
-                        writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(extraPair.Equals(lastExtraAppDlc) ? "" : ",")}");
-                        installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-                    }
-                    writer.WriteLine("      }");
-                    writer.WriteLine(pair.Equals(lastExtraApp) ? "    }" : "    },");
-                }
-            }
-            writer.WriteLine("  },");
         }
-        else
-            writer.WriteLine("  \"extra_dlcs\": {},");
-        writer.WriteLine("  \"store_config\": null");
-        writer.WriteLine("}");
+        writer.WriteLine("  },");
     }
+    else
+        writer.WriteLine("  \"extra_dlcs\": {},");
 
+    writer.WriteLine("  \"store_config\": null");
+    writer.WriteLine("}");
+}
     internal static async Task Uninstall(string directory, InstallForm installForm = null, bool deleteOthers = true)
         => await Task.Run(() =>
         {
