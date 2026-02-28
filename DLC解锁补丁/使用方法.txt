@@ -1,0 +1,2 @@
+覆盖到以下路径即可（建议备份原版steam_api64.dll），理论上后续dlc自动解锁
+E:\SteamLibrary\steamapps\common\Granblue Fantasy Versus Rising\Engine\Binaries\ThirdParty\Steamworks\Steamv157\Win64
