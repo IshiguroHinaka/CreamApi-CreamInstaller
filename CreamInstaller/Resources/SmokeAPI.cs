@@ -1,9 +1,6 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+﻿using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using CreamInstaller.Components;
 using CreamInstaller.Forms;
 using CreamInstaller.Utility;
 
@@ -27,134 +24,37 @@ internal static class SmokeAPI
 
     internal static void CheckConfig(string directory, ProgramSelection selection, InstallForm installForm = null)
     {
+        _ = selection;
         directory.GetSmokeApiComponents(out _, out _, out _, out _, out string old_config, out string config, out _, out _, out _);
-        List<KeyValuePair<string, (DlcType type, string name, string icon)>> overrideDlc = selection.AllDlc.Except(selection.SelectedDlc).ToList();
-        foreach (KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> dlc)> pair in selection.ExtraDlc)
-            if (selection.ExtraSelectedDlc.TryGetValue(pair.Key,
-                    out (string name, SortedList<string, (DlcType type, string name, string icon)> dlc) selectedPair))
-                overrideDlc.AddRange(pair.Value.dlc.Except(selectedPair.dlc));
-        List<KeyValuePair<string, (DlcType type, string name, string icon)>> injectDlc = new();
-        if (selection.AllDlc.Count > 64)
-            injectDlc.AddRange(selection.SelectedDlc.Where(pair => pair.Value.type is DlcType.SteamHidden));
-        List<KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)>> extraApps = new();
-        if (selection.ExtraDlc.Any(e => e.Value.dlc.Count > 64))
-            foreach (KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> pair in selection
-                        .ExtraSelectedDlc)
-                if (selection.ExtraDlc.First(e => e.Key == pair.Key).Value.dlc.Count > 64)
-                {
-                    SortedList<string, (DlcType type, string name, string icon)> extraInjectDlc = new(PlatformIdComparer.String);
-                    foreach (KeyValuePair<string, (DlcType type, string name, string icon)> extraPair in pair.Value.injectDlc.Where(extraPair
-                                 => extraPair.Value.type is DlcType.SteamHidden))
-                        extraInjectDlc.Add(extraPair.Key, extraPair.Value);
-                    KeyValuePair<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> newExtraPair = new(pair.Key,
-                        (pair.Value.name, extraInjectDlc));
-                    extraApps.Add(newExtraPair);
-                }
-        injectDlc = injectDlc.ToList();
         if (File.Exists(old_config))
         {
             File.Delete(old_config);
             installForm?.UpdateUser($"Deleted old configuration: {Path.GetFileName(old_config)}", LogTextBox.Action, false);
         }
-        if (selection.ExtraSelectedDlc.Any(p => p.Value.dlc.Any()) || overrideDlc.Any() || injectDlc.Any())
-        {
-            /*if (installForm is not null)
-                installForm.UpdateUser("Generating SmokeAPI configuration for " + selection.Name + $" in directory \"{directory}\" . . . ", LogTextBox.Operation);*/
-            File.Create(config).Close();
-            StreamWriter writer = new(config, true, Encoding.UTF8);
-            WriteConfig(writer, selection.Id, new(extraApps.ToDictionary(pair => pair.Key, pair => pair.Value), PlatformIdComparer.String),
-                new(overrideDlc.ToDictionary(pair => pair.Key, pair => pair.Value), PlatformIdComparer.String),
-                new(injectDlc.ToDictionary(pair => pair.Key, pair => pair.Value), PlatformIdComparer.String), installForm);
-            writer.Flush();
-            writer.Close();
-        }
-        else if (File.Exists(config))
-        {
-            File.Delete(config);
-            installForm?.UpdateUser($"Deleted unnecessary configuration: {Path.GetFileName(config)}", LogTextBox.Action, false);
-        }
+
+        File.Create(config).Close();
+        using StreamWriter writer = new(config, false, Encoding.UTF8);
+        WriteConfig(writer);
+        installForm?.UpdateUser($"Wrote configuration: {Path.GetFileName(config)}", LogTextBox.Action, false);
     }
 
-    private static void WriteConfig(StreamWriter writer, string appId,
-        SortedList<string, (string name, SortedList<string, (DlcType type, string name, string icon)> injectDlc)> extraApps,
-        SortedList<string, (DlcType type, string name, string icon)> overrideDlc, SortedList<string, (DlcType type, string name, string icon)> injectDlc,
-        InstallForm installForm = null)
+    private static void WriteConfig(StreamWriter writer)
     {
-        // 只生成 2157560 的配置
-        if (appId != "2157560")
-            return;
-
         writer.WriteLine("{");
         writer.WriteLine("  \"$version\": 2,");
         writer.WriteLine("  \"logging\": false,");
         writer.WriteLine("  \"unlock_family_sharing\": true,");
         writer.WriteLine("  \"default_app_status\": \"unlocked\",");
         writer.WriteLine("  \"override_app_status\": {},");
-
-        // 写入 overrideDlc 配置
-        if (overrideDlc.Count > 0)
-        {
-            writer.WriteLine("  \"override_dlc_status\": {");
-            KeyValuePair<string, (DlcType type, string name, string icon)> lastOverrideDlc = overrideDlc.Last();
-            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in overrideDlc)
-            {
-                string dlcId = pair.Key;
-                (_, string dlcName, _) = pair.Value;
-                writer.WriteLine($"    \"{dlcId}\": \"locked\"{(pair.Equals(lastOverrideDlc) ? "" : ",")}");
-                installForm?.UpdateUser($"Added locked DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-            }
-            writer.WriteLine("  },");
-        }
-        else
-            writer.WriteLine("  \"override_dlc_status\": {},");
-
+        writer.WriteLine("  \"override_dlc_status\": {},");
         writer.WriteLine("  \"auto_inject_inventory\": true,");
         writer.WriteLine("  \"extra_inventory_items\": [],");
-
-        // 处理 DLC 配置
-        if (injectDlc.Count > 0 || extraApps.Count > 0)
-        {
-            writer.WriteLine("  \"extra_dlcs\": {");
-
-            // 为 2667960 添加 2157560 的 DLC 配置
-            writer.WriteLine($"    \"2667960\": {{");
-            writer.WriteLine("      \"dlcs\": {");
-            KeyValuePair<string, (DlcType type, string name, string icon)> lastInjectDlc = injectDlc.Last();
-            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
-            {
-                string dlcId = pair.Key;
-                (_, string dlcName, _) = pair.Value;
-                writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
-                installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-            }
-            writer.WriteLine("      }");
-            writer.WriteLine("    },");
-
-            // 写入 2157560 的 DLC 配置
-            writer.WriteLine($"    \"2157560\": {{");
-            writer.WriteLine("      \"dlcs\": {");
-            lastInjectDlc = injectDlc.Last();
-            foreach (KeyValuePair<string, (DlcType type, string name, string icon)> pair in injectDlc)
-            {
-                string dlcId = pair.Key;
-                (_, string dlcName, _) = pair.Value;
-                writer.WriteLine($"        \"{dlcId}\": \"{dlcName}\"{(pair.Equals(lastInjectDlc) ? "" : ",")}");
-                installForm?.UpdateUser($"Added extra DLC to SmokeAPI.config.json with appid {dlcId} ({dlcName})", LogTextBox.Action, false);
-            }
-            writer.WriteLine("      }");
-            writer.WriteLine("    }");
-        
-            writer.WriteLine("  },");
-        }
-        else
-            writer.WriteLine("  \"extra_dlcs\": {},");
-
+        writer.WriteLine("  \"extra_dlcs\": {},");
         writer.WriteLine("  \"store_config\": null");
         writer.WriteLine("}");
     }
 
 
-    
     internal static async Task Uninstall(string directory, InstallForm installForm = null, bool deleteOthers = true)
         => await Task.Run(() =>
         {
